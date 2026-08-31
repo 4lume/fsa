@@ -1,0 +1,151 @@
+{
+    "validationFormNormDoc": [
+        {
+            "id": 38,
+            "masterId": "38",
+            "docNum": "ТР ТС 005/2011",
+            "name": "О безопасности упаковки"
+        }
+    ],
+    "validationScheme2": [
+        {
+            "isApplicantProvider": false,
+            "isPresenceOfProxy": true,
+            "name": "3д",
+            "isApplicantEeuMember": true,
+            "masterId": "7350",
+            "isApplicantForeign": true,
+            "isOneOffProductTesting": false,
+            "isAccreditationLab": true,
+            "isBatchProductTesting": false,
+            "validityTerm": 5,
+            "isProductSampleTesting": true,
+            "isBatchProduction": false,
+            "isSeriesProduction": true,
+            "id": 7350,
+            "isApplicantManufacturer": true,
+            "isOneOffProduction": false
+        }
+    ],
+    "validationObjectType": [
+        {
+            "masterId": "3",
+            "id": 3,
+            "name": "Серийный выпуск"
+        }
+    ],
+    "conformityDocType": [
+        {
+            "id": 2,
+            "name": "Декларация о соответствии требованиям технического регламента Евразийского экономического союза (технического регламента Таможенного союза)"
+        }
+    ],
+    "status": [
+        {
+            "masterId": "6",
+            "id": 6,
+            "name": "Действует"
+        }
+    ],
+    "annexType": [
+        {
+            "name": "Приложение изготовителей",
+            "masterId": "2",
+            "id": 2
+        }
+    ],
+    "oksm": [
+        {
+            "name": "Российская Федерация",
+            "shortName": "РОССИЯ",
+            "id": "643",
+            "masterId": 345,
+            "eeuMember": true,
+            "alpha2": "RU"
+        },
+        {
+            "name": "Китайская Народная Республика",
+            "shortName": "КИТАЙ",
+            "id": "156",
+            "masterId": 92,
+            "eeuMember": false,
+            "alpha2": "CN"
+        }
+    ],
+    "addressType": [
+        {
+            "name": "Адрес (адреса) места (мест) осуществления деятельности",
+            "id": 3,
+            "masterId": "3"
+        },
+        {
+            "name": "Адрес (адреса) места (мест) нахождения",
+            "id": 1,
+            "masterId": "1"
+        }
+    ],
+    "declarantType": [
+        {
+            "name": "Уполномоченное изготовителем лицо",
+            "masterId": "1",
+            "id": 1
+        }
+    ],
+    "applicantType": [
+        {
+            "id": 2,
+            "name": "Индивидуальный предприниматель",
+            "masterId": "2"
+        },
+        {
+            "id": 3,
+            "name": "Иностранное лицо",
+            "masterId": "3"
+        }
+    ],
+    "tnved": [
+        {
+            "hidden": false,
+            "code": "3923501000",
+            "id": 65795,
+            "name": "- - колпаки и навинчивающиеся пробки для бутылок",
+            "masterId": "65795"
+        },
+        {
+            "hidden": false,
+            "code": "3923900000",
+            "id": 65797,
+            "name": "- прочие",
+            "masterId": "65797"
+        },
+        {
+            "hidden": false,
+            "code": "3923509000",
+            "id": 65796,
+            "name": "- - прочие",
+            "masterId": "65796"
+        }
+    ],
+    "testingStatus": [
+        {
+            "name": "Испытания проводились в аккредитованной в ЕАЭС лаборатории",
+            "masterId": "2",
+            "id": 2
+        }
+    ],
+    "applicantDocType": [
+        {
+            "name": "Другое",
+            "masterId": "6",
+            "id": 6
+        }
+    ],
+    "techregProductListEEU": [
+        {
+            "name": "Полимерные укупорочные средства (пробки, колпачки, крышки, дозаторы-ограничители, рассекатели, прокладки уплотнительные, клапаны)",
+            "id": 470,
+            "hidden": false,
+            "techRegId": 38
+        }
+    ]
+}
