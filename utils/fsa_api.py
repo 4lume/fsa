@@ -1,12 +1,32 @@
+import random
+import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
 try:
-    from new_parser.utils.fsa_constants import API_BASE, API_NSI_MULTI_URL, DEFAULT_HEADERS
+    from new_parser.utils.fsa_constants import (
+        API_BASE,
+        API_DECLARATIONS_URL,
+        API_NSI_MULTI_URL,
+        DEFAULT_HEADERS,
+        DELAY_BETWEEN_REQUESTS_SEC_MAX,
+        DELAY_BETWEEN_REQUESTS_SEC_MIN,
+        TECH_REG_PRESETS,
+        TECH_REG_TR_TS_010,
+    )
 except ModuleNotFoundError:
-    from utils.fsa_constants import API_BASE, API_NSI_MULTI_URL, DEFAULT_HEADERS
+    from utils.fsa_constants import (
+        API_BASE,
+        API_DECLARATIONS_URL,
+        API_NSI_MULTI_URL,
+        DEFAULT_HEADERS,
+        DELAY_BETWEEN_REQUESTS_SEC_MAX,
+        DELAY_BETWEEN_REQUESTS_SEC_MIN,
+        TECH_REG_PRESETS,
+        TECH_REG_TR_TS_010,
+    )
 
 
 STATUS_MAP = {
@@ -283,6 +303,143 @@ def extract_record_fields(record: dict):
         'testing_labs': _join_testing_lab_blocks(record.get('testingLabs')),
         'testing_protocols': _join_testing_protocol_blocks(record.get('testingLabs')),
     }
+
+
+def build_list_payload(
+    page: int,
+    start_date: str,
+    end_date: str | None,
+    *,
+    id_group_eeu: list[int],
+    id_tech_reg: list[int],
+):
+    return {
+        'size': 100,
+        'page': page,
+        'count': 0,
+        'filter': {
+            'status': [],
+            'idDeclType': [],
+            'idCertObjectType': [],
+            'idProductType': [],
+            'idGroupRU': [],
+            'idGroupEEU': list(id_group_eeu),
+            'idTechReg': list(id_tech_reg),
+            'idApplicantType': [],
+            'regDate': {
+                'minDate': start_date,
+                'maxDate': end_date or None,
+            },
+            'endDate': {
+                'minDate': None,
+                'maxDate': None,
+            },
+            'columnsSearch': [{'name': 'number', 'search': None, 'type': 0}],
+            'number': None,
+            'idProductOrigin': [],
+            'idProductEEU': [],
+            'idProductRU': [],
+            'idDeclScheme': [],
+            'awaitOperatorCheck': None,
+            'editApp': None,
+            'violationSendDate': None,
+            'isProtocolInvalid': None,
+            'checkerAIResult': None,
+            'checkerAIProtocolsResults': None,
+            'checkerAIProtocolsMistakes': None,
+            'hiddenFromOpen': None,
+        },
+        'columnsSort': [{'column': 'declDate', 'sort': 'DESC'}],
+    }
+
+
+def _declaration_items(data: Any) -> list:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    for key in ('items', 'content', 'data'):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _declaration_total(data: Any) -> int | None:
+    if not isinstance(data, dict):
+        return None
+    for key in ('count', 'total', 'totalElements', 'totalCount'):
+        value = data.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
+def collect_declaration_ids(
+    token: str,
+    start_date: str,
+    end_date: str | None,
+    tech_key: str,
+    on_count: Callable[[int, int | None], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> list[str]:
+    preset = TECH_REG_PRESETS.get(tech_key) or TECH_REG_PRESETS[TECH_REG_TR_TS_010]
+    session = requests.Session()
+    session.headers.update({
+        **DEFAULT_HEADERS,
+        'Authorization': normalize_token(token),
+        'Content-Type': 'application/json',
+        'Referer': f'{API_BASE}/rds/declaration',
+    })
+
+    all_ids: list[str] = []
+    page = 0
+    total: int | None = None
+    while True:
+        if should_stop and should_stop():
+            break
+        payload = build_list_payload(
+            page=page,
+            start_date=start_date,
+            end_date=end_date,
+            id_group_eeu=preset['idGroupEEU'],
+            id_tech_reg=preset['idTechReg'],
+        )
+        try:
+            response = session.post(API_DECLARATIONS_URL, json=payload, timeout=40)
+        except requests.Timeout as exc:
+            raise RuntimeError(f'Превышено время ожидания при сборе ID (страница {page})') from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(f'Ошибка сети при сборе ID (страница {page})') from exc
+
+        if response.status_code in (401, 403):
+            raise RuntimeError('Токен недействителен или доступ запрещён')
+        if response.status_code == 429:
+            raise RuntimeError('Слишком много запросов. Подождите и повторите позже')
+        if response.status_code != 200:
+            raise RuntimeError(f'Ошибка HTTP {response.status_code} при сборе ID (страница {page})')
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f'Некорректный JSON при сборе ID (страница {page})') from exc
+
+        items = _declaration_items(data)
+        if not items:
+            break
+        if total is None:
+            total = _declaration_total(data)
+
+        for item in items:
+            if isinstance(item, dict) and item.get('id') is not None:
+                all_ids.append(str(item['id']))
+        if on_count:
+            on_count(len(all_ids), total)
+
+        page += 1
+        time.sleep(random.uniform(DELAY_BETWEEN_REQUESTS_SEC_MIN, DELAY_BETWEEN_REQUESTS_SEC_MAX))
+
+    return list(dict.fromkeys(all_ids))
 
 
 def fetch_declaration_record(token: str, record_id: str):
