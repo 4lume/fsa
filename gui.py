@@ -1,6 +1,5 @@
 import queue
 import threading
-from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -42,10 +41,6 @@ class APIHarvestTkShell:
         self.worker_thread = None
         self.slot_total = 0
         self.slot_done = 0
-        self.first_done = 0
-        self.first_total = 0
-        self.second_done = 0
-        self.second_total = 0
         self._run_locked = False
 
         self._build_layout()
@@ -128,14 +123,8 @@ class APIHarvestTkShell:
         self.progress = ctk.CTkProgressBar(bar_col, height=14, corner_radius=7, progress_color=COLOR_ACCENT, fg_color=COLOR_SURFACE_ELEVATED)
         self.progress.pack(fill='x', pady=(16, 0))
         self.progress.set(0)
-        self.lbl_counter = ctk.CTkLabel(root, text='1 проход: 0 из 0', font=_font(14, 'bold'), text_color=COLOR_SUCCESS)
+        self.lbl_counter = ctk.CTkLabel(root, text='0 из 0', font=_font(14, 'bold'), text_color=COLOR_SUCCESS)
         self.lbl_counter.pack(anchor='w', pady=(4, 0))
-
-        self.secondary_progress = ctk.CTkProgressBar(bar_col, height=14, corner_radius=7, progress_color=COLOR_SUCCESS, fg_color=COLOR_SURFACE_ELEVATED)
-        self.secondary_progress.pack(fill='x', pady=(6, 0))
-        self.secondary_progress.set(0)
-        self.lbl_counter_secondary = ctk.CTkLabel(root, text='2 проход: 0 из 0', font=_font(14, 'bold'), text_color=COLOR_SUCCESS)
-        self.lbl_counter_secondary.pack(anchor='w', pady=(0, 8))
 
     def on_take_file(self):
         chosen = filedialog.askopenfilename(parent=self.shell, title='Книга Excel', filetypes=[('Excel', '*.xlsx'), ('Все файлы', '*.*')])
@@ -176,13 +165,8 @@ class APIHarvestTkShell:
 
         self.slot_total = measure_linecount_bom(self.path_ids)
         self.slot_done = 0
-        self.first_done = 0
-        self.first_total = self.slot_total
-        self.second_done = 0
-        self.second_total = self.slot_total
         self.progress_q.queue.clear()
-        self.progress_q.put(('first', self.first_done, self.first_total))
-        self.progress_q.put(('second', self.second_done, self.second_total))
+        self.progress_q.put((self.slot_done, self.slot_total))
         self.worker_thread = threading.Thread(
             target=execute_all_passes,
             args=(self, self.path_xlsx, self.path_ids, token),
@@ -205,33 +189,19 @@ class APIHarvestTkShell:
     def _tick_meter(self):
         if not self.progress_q.empty():
             item = self.progress_q.get()
-            if isinstance(item, tuple) and len(item) == 3 and item[0] in {'first', 'second'}:
-                phase, done, total = item
-                if phase == 'first':
-                    self.first_done = max(0, done)
-                    self.first_total = max(1, total)
-                    frac = min(1.0, max(0.0, self.first_done / self.first_total))
-                    self.progress.set(frac)
-                    self.lbl_counter.configure(text=f'1 проход: {self.first_done} из {self.first_total}')
-                else:
-                    self.second_done = max(0, done)
-                    self.second_total = max(1, total)
-                    frac = min(1.0, max(0.0, self.second_done / self.second_total))
-                    self.secondary_progress.set(frac)
-                    self.lbl_counter_secondary.configure(text=f'2 проход: {self.second_done} из {self.second_total}')
+            if isinstance(item, tuple) and len(item) == 2 and item[0] == 'error':
+                self._release_run_ui()
+                messagebox.showerror('Ошибка', item[1], parent=self.shell)
             elif isinstance(item, tuple) and len(item) == 2:
                 self.slot_done, self.slot_total = item
                 total = max(self.slot_total, 1)
-                shown = min(self.slot_done + 1, self.slot_total) if self.slot_total else 0
-                frac = min(1.0, max(0.0, shown / total))
+                frac = min(1.0, max(0.0, self.slot_done / total))
                 self.progress.set(frac)
-                self.lbl_counter.configure(text=f'1 проход: {shown} из {self.slot_total}')
+                self.lbl_counter.configure(text=f'{self.slot_done} из {self.slot_total}')
 
         if self._run_locked and self.worker_thread and not self.worker_thread.is_alive() and self.progress_q.empty():
             self.progress.set(1.0)
-            self.secondary_progress.set(1.0)
-            self.lbl_counter.configure(text=f'1 проход: {self.first_total} из {self.first_total}')
-            self.lbl_counter_secondary.configure(text=f'2 проход: {self.second_total} из {self.second_total}')
+            self.lbl_counter.configure(text=f'{self.slot_total} из {self.slot_total}')
             self._release_run_ui()
 
         self.shell.after(100, self._tick_meter)
