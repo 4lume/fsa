@@ -35,7 +35,7 @@ def execute_all_passes(
     end_date,
     tech_key,
     doc_type=DOC_TYPE_DECLARATION,
-    group_id=None,
+    group_ids=None,
 ):
     try:
         ids = collect_record_ids(
@@ -44,7 +44,7 @@ def execute_all_passes(
             end_date,
             tech_key,
             doc_type,
-            group_id=group_id,
+            group_ids=group_ids,
             on_count=lambda count, total: host.progress_q.put(('harvest', count, total)),
             should_stop=lambda: _cancelled(host),
         )

@@ -1,1 +1,1 @@
-# API-based declaration parser
+# Парсер деклараций через API

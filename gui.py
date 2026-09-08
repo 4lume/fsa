@@ -55,16 +55,15 @@ def _asset_path(name: str) -> Path:
 
 
 class ScrollableOptionButton(ctk.CTkFrame):
-    """Dropdown with a scrollable popup — works with long lists in frozen exe."""
+    """Выпадающий мультивыбор с поиском — нормально работает с длинными списками в exe."""
 
     def __init__(
         self,
         master,
-        variable: ctk.StringVar,
         values: list[str],
         *,
         height: int = CONTROL_H,
-        max_popup_height: int = 320,
+        max_popup_height: int = 360,
         font=None,
         fg_color=COLOR_SURFACE_ELEVATED,
         button_color=COLOR_ACCENT,
@@ -74,21 +73,32 @@ class ScrollableOptionButton(ctk.CTkFrame):
         dropdown_hover_color=COLOR_ACCENT_SOFT,
         dropdown_text_color=COLOR_TEXT,
         border_color=COLOR_BORDER,
+        all_label: str = EEU_GROUP_ALL_LABEL,
     ):
         super().__init__(master, fg_color='transparent')
-        self._variable = variable
+        self._all_label = all_label
         self._values = list(values)
+        self._selected: set[str] = {all_label}
         self._max_popup_height = max_popup_height
         self._popup: ctk.CTkToplevel | None = None
+        self._scroll: ctk.CTkScrollableFrame | None = None
+        self._search_entry: ctk.CTkEntry | None = None
+        self._done_button: ctk.CTkButton | None = None
+        self._search_var = ctk.StringVar(value='')
+        self._item_rows: list[tuple[str, ctk.CTkCheckBox, ctk.BooleanVar]] = []
+        self._popup_visible = False
+        self._values_dirty = True
         self._font = font
         self._dropdown_fg_color = dropdown_fg_color
         self._dropdown_hover_color = dropdown_hover_color
         self._dropdown_text_color = dropdown_text_color
         self._border_color = border_color
+        self._button_color = button_color
+        self._button_hover_color = button_hover_color
 
         self._button = ctk.CTkButton(
             self,
-            text=self._display_text(variable.get()),
+            text=self._summary_text(),
             height=height,
             corner_radius=RADIUS,
             fg_color=fg_color,
@@ -101,7 +111,6 @@ class ScrollableOptionButton(ctk.CTkFrame):
             command=self._toggle_popup,
         )
         self._button.pack(fill='x', expand=True)
-        # Separate chevron so it stays large, right-aligned, and accent-colored.
         chevron_font = ctk.CTkFont(size=22, weight='bold')
         self._chevron = ctk.CTkLabel(
             self._button,
@@ -116,23 +125,46 @@ class ScrollableOptionButton(ctk.CTkFrame):
         )
         self._chevron.place(relx=1.0, rely=0.5, x=-6, anchor='e')
         self._chevron.bind('<Button-1>', lambda _e: self._toggle_popup())
-        self._var_trace = self._variable.trace_add('write', self._sync_button_text)
+        self._search_trace = self._search_var.trace_add('write', self._apply_filter)
+        self.bind('<Destroy>', self._on_destroy)
 
-    @staticmethod
-    def _display_text(value: str, limit: int = 48) -> str:
-        text = (value or '').strip()
+    def selected_labels(self) -> list[str]:
+        concrete = [v for v in self._values if v in self._selected and v != self._all_label]
+        if not concrete:
+            return [self._all_label]
+        return concrete
+
+    def selected_ids(self, label_to_id: dict[str, int | None]) -> list[int]:
+        ids: list[int] = []
+        for label in self.selected_labels():
+            group_id = label_to_id.get(label)
+            if group_id is not None:
+                ids.append(int(group_id))
+        return ids
+
+    def _summary_text(self, limit: int = 42) -> str:
+        labels = self.selected_labels()
+        if labels == [self._all_label]:
+            text = self._all_label
+        elif len(labels) == 1:
+            text = labels[0]
+        else:
+            text = f'Выбрано: {len(labels)}'
         if len(text) > limit:
             text = text[: limit - 1] + '…'
         return text
 
-    def _sync_button_text(self, *_args):
-        self._button.configure(text=self._display_text(self._variable.get()))
+    def _sync_button_text(self):
+        self._button.configure(text=self._summary_text())
 
     def configure(self, **kwargs):
         if 'values' in kwargs:
             self._values = list(kwargs.pop('values'))
-            if self._popup is not None and self._popup.winfo_exists():
-                self._close_popup()
+            self._selected = {self._all_label}
+            self._values_dirty = True
+            self._sync_button_text()
+            if self._popup_visible:
+                self._hide_popup()
         if 'state' in kwargs:
             self._button.configure(state=kwargs.pop('state'))
         if kwargs:
@@ -144,44 +176,183 @@ class ScrollableOptionButton(ctk.CTkFrame):
         return super().cget(attribute_name)
 
     def _toggle_popup(self):
-        if self._popup is not None and self._popup.winfo_exists():
-            self._close_popup()
+        if self._popup_visible:
+            self._hide_popup()
             return
-        self._open_popup()
+        self._show_popup()
 
-    def _close_popup(self):
+    def _hide_popup(self):
+        popup = self._popup
+        self._popup_visible = False
+        self._sync_button_text()
+        if popup is None:
+            return
+        if not popup.winfo_exists():
+            self._popup = None
+            self._scroll = None
+            self._search_entry = None
+            self._done_button = None
+            self._item_rows = []
+            return
+        try:
+            popup.grab_release()
+        except Exception:
+            pass
+        popup.withdraw()
+        self._search_var.set('')
+
+    def _destroy_popup(self):
+        self._hide_popup()
         popup = self._popup
         self._popup = None
+        self._scroll = None
+        self._search_entry = None
+        self._done_button = None
+        self._item_rows = []
+        self._values_dirty = True
         if popup is not None and popup.winfo_exists():
-            try:
-                popup.grab_release()
-            except Exception:
-                pass
             popup.destroy()
 
-    def _pick(self, value: str):
-        self._variable.set(value)
-        self._close_popup()
+    def _on_destroy(self, event):
+        if event.widget is self:
+            self._destroy_popup()
 
-    def _open_popup(self):
+    def _popup_geometry(self) -> tuple[int, int, int, int]:
         self.update_idletasks()
-        popup = ctk.CTkToplevel(self)
-        popup.withdraw()
-        popup.title('Группа EEU')
-        popup.configure(fg_color=self._dropdown_fg_color)
-        popup.transient(self.winfo_toplevel())
-
-        width = max(self.winfo_width(), 360)
+        width = max(self.winfo_width(), 380)
         row_h = 34
-        content_h = min(max(len(self._values), 1) * row_h + 16, self._max_popup_height)
+        chrome_h = 48 + 48
+        content_h = min(
+            max(len(self._values), 1) * row_h + chrome_h + 16,
+            self._max_popup_height,
+        )
         x = self.winfo_rootx()
         y = self.winfo_rooty() + self.winfo_height() + 2
         screen_h = self.winfo_screenheight()
         if y + content_h > screen_h - 40:
             y = max(40, self.winfo_rooty() - content_h - 2)
-        popup.geometry(f'{width}x{content_h}+{x}+{y}')
-        popup.minsize(280, 120)
+        return width, content_h, x, y
+
+    def _on_toggle(self, value: str):
+        row = next((r for r in self._item_rows if r[0] == value), None)
+        if row is None:
+            return
+        _, _cb, var = row
+        checked = bool(var.get())
+        if value == self._all_label:
+            if checked:
+                self._selected = {self._all_label}
+                for other_value, _other_cb, other_var in self._item_rows:
+                    if other_value != self._all_label:
+                        other_var.set(False)
+            else:
+                # Оставляем выбранным хотя бы «Все группы».
+                var.set(True)
+                self._selected = {self._all_label}
+        else:
+            if checked:
+                self._selected.discard(self._all_label)
+                self._selected.add(value)
+                for other_value, _other_cb, other_var in self._item_rows:
+                    if other_value == self._all_label:
+                        other_var.set(False)
+                        break
+            else:
+                self._selected.discard(value)
+                if not any(v != self._all_label and v in self._selected for v in self._values):
+                    self._selected = {self._all_label}
+                    for other_value, _other_cb, other_var in self._item_rows:
+                        if other_value == self._all_label:
+                            other_var.set(True)
+                            break
+        self._sync_button_text()
+
+    def _rebuild_items(self):
+        if self._scroll is None:
+            return
+        for child in self._scroll.winfo_children():
+            child.destroy()
+        self._item_rows = []
+        if self._all_label in self._values and not self._selected.intersection(
+            v for v in self._values if v != self._all_label
+        ):
+            self._selected = {self._all_label}
+        for value in self._values:
+            checked = value in self._selected or (
+                value == self._all_label and self.selected_labels() == [self._all_label]
+            )
+            var = ctk.BooleanVar(value=checked)
+            item = ctk.CTkCheckBox(
+                self._scroll,
+                text=value,
+                variable=var,
+                height=28,
+                corner_radius=6,
+                fg_color=self._button_color,
+                hover_color=self._button_hover_color,
+                border_color=self._border_color,
+                text_color=self._dropdown_text_color,
+                font=self._font,
+                command=lambda v=value: self._on_toggle(v),
+            )
+            item.pack(fill='x', padx=8, pady=2)
+            self._item_rows.append((value, item, var))
+        self._values_dirty = False
+        self._apply_filter()
+        self._sync_button_text()
+
+    def _apply_filter(self, *_args):
+        if not self._item_rows:
+            return
+        query = (self._search_var.get() or '').strip().casefold()
+        for _value, item, _var in self._item_rows:
+            item.pack_forget()
+        for value, item, _var in self._item_rows:
+            keep = (
+                value == self._all_label
+                or not query
+                or query in value.casefold()
+            )
+            if keep:
+                item.pack(fill='x', padx=8, pady=2)
+
+    def _ensure_popup(self):
+        if self._popup is not None and self._popup.winfo_exists():
+            if self._values_dirty:
+                self._rebuild_items()
+            else:
+                # Синхронизируем чекбоксы с текущим выбором.
+                for value, _item, var in self._item_rows:
+                    want = value in self._selected or (
+                        value == self._all_label and self.selected_labels() == [self._all_label]
+                    )
+                    if bool(var.get()) != want:
+                        var.set(want)
+            return
+
+        popup = ctk.CTkToplevel(self)
+        popup.withdraw()
+        popup.title('Группы EEU')
+        popup.configure(fg_color=self._dropdown_fg_color)
+        popup.transient(self.winfo_toplevel())
+        popup.minsize(300, 200)
         popup.resizable(True, True)
+        popup.protocol('WM_DELETE_WINDOW', self._hide_popup)
+        popup.bind('<Escape>', lambda _e: self._hide_popup())
+
+        search = ctk.CTkEntry(
+            popup,
+            textvariable=self._search_var,
+            placeholder_text='Поиск группы…',
+            height=36,
+            corner_radius=RADIUS,
+            border_width=1,
+            border_color=self._border_color,
+            fg_color=COLOR_SURFACE_ELEVATED,
+            text_color=COLOR_TEXT,
+            font=self._font,
+        )
+        search.pack(fill='x', padx=8, pady=(8, 4))
 
         scroll = ctk.CTkScrollableFrame(
             popup,
@@ -190,33 +361,44 @@ class ScrollableOptionButton(ctk.CTkFrame):
             border_width=1,
             border_color=self._border_color,
         )
-        scroll.pack(fill='both', expand=True, padx=1, pady=1)
+        scroll.pack(fill='both', expand=True, padx=1, pady=(0, 4))
 
-        for value in self._values:
-            item = ctk.CTkButton(
-                scroll,
-                text=value,
-                anchor='w',
-                height=30,
-                corner_radius=8,
-                fg_color='transparent',
-                hover_color=self._dropdown_hover_color,
-                text_color=self._dropdown_text_color,
-                font=self._font,
-                command=lambda v=value: self._pick(v),
-            )
-            item.pack(fill='x', padx=4, pady=1)
+        done = ctk.CTkButton(
+            popup,
+            text='Готово',
+            height=36,
+            corner_radius=RADIUS,
+            fg_color=self._button_color,
+            hover_color=self._button_hover_color,
+            text_color='#ffffff',
+            font=self._font,
+            command=self._hide_popup,
+        )
+        done.pack(fill='x', padx=8, pady=(0, 8))
 
-        popup.protocol('WM_DELETE_WINDOW', self._close_popup)
-        popup.bind('<Escape>', lambda _e: self._close_popup())
+        self._popup = popup
+        self._scroll = scroll
+        self._search_entry = search
+        self._done_button = done
+        self._rebuild_items()
+
+    def _show_popup(self):
+        self._ensure_popup()
+        popup = self._popup
+        if popup is None:
+            return
+        self._search_var.set('')
+        width, content_h, x, y = self._popup_geometry()
+        popup.geometry(f'{width}x{content_h}+{x}+{y}')
         popup.deiconify()
         popup.lift()
-        popup.focus_force()
         try:
             popup.grab_set()
         except Exception:
             pass
-        self._popup = popup
+        if self._search_entry is not None:
+            self._search_entry.focus_force()
+        self._popup_visible = True
 
 
 class APIHarvestTkShell:
@@ -233,7 +415,6 @@ class APIHarvestTkShell:
         self.end_date_var = ctk.StringVar(value='2024-02-01')
         self.doc_type_var = ctk.StringVar(value=DOC_TYPE_DECLARATION)
         self.tech_reg_var = ctk.StringVar(value=TECH_REG_TR_TS_010)
-        self.eeu_group_var = ctk.StringVar(value=EEU_GROUP_ALL_LABEL)
         self._eeu_label_to_id: dict[str, int | None] = {EEU_GROUP_ALL_LABEL: None}
         self.progress_q = queue.Queue()
         self.worker_thread = None
@@ -335,7 +516,7 @@ class APIHarvestTkShell:
 
         self._label(options, 'Тип документа', pack=False).grid(row=0, column=0, sticky='nw', padx=(0, GAP // 2), pady=(0, GAP))
         self._label(options, 'Технический регламент', pack=False).grid(row=0, column=1, sticky='nw', padx=(GAP // 2, GAP // 2), pady=(0, GAP))
-        self._label(options, 'Группа EEU', pack=False).grid(row=0, column=2, sticky='nw', padx=(GAP // 2, 0), pady=(0, GAP))
+        self._label(options, 'Группы EEU', pack=False).grid(row=0, column=2, sticky='nw', padx=(GAP // 2, 0), pady=(0, GAP))
 
         doc_radios = ctk.CTkFrame(options, fg_color='transparent', height=CONTROL_H)
         doc_radios.grid(row=1, column=0, sticky='new', padx=(0, GAP // 2))
@@ -357,10 +538,9 @@ class APIHarvestTkShell:
 
         self.cmb_eeu = ScrollableOptionButton(
             options,
-            variable=self.eeu_group_var,
             values=[EEU_GROUP_ALL_LABEL],
             height=CONTROL_H,
-            max_popup_height=320,
+            max_popup_height=360,
             font=self.font_body,
             fg_color=COLOR_SURFACE_ELEVATED,
             button_color=COLOR_ACCENT,
@@ -495,18 +675,12 @@ class APIHarvestTkShell:
         mapping: dict[str, int | None] = {EEU_GROUP_ALL_LABEL: None}
         for group in groups:
             label = str(group.get('name') or group.get('id'))
-            # Keep labels unique for OptionMenu values.
             if label in mapping:
                 label = f"{label} [{group.get('id')}]"
             mapping[label] = int(group['id'])
             labels.append(label)
         self._eeu_label_to_id = mapping
-        current = self.eeu_group_var.get()
         self.cmb_eeu.configure(values=labels)
-        if current not in mapping:
-            self.eeu_group_var.set(EEU_GROUP_ALL_LABEL)
-        else:
-            self.eeu_group_var.set(current)
 
     def on_take_file(self):
         chosen = filedialog.askopenfilename(parent=self.shell, title='Книга Excel', filetypes=[('Excel', '*.xlsx'), ('Все файлы', '*.*')])
@@ -560,7 +734,7 @@ class APIHarvestTkShell:
                 end_date,
                 self.tech_reg_var.get(),
                 self.doc_type_var.get(),
-                self._eeu_label_to_id.get(self.eeu_group_var.get()),
+                self.cmb_eeu.selected_ids(self._eeu_label_to_id),
             ),
             daemon=True,
         )

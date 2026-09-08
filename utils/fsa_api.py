@@ -453,6 +453,7 @@ def collect_record_ids(
     tech_key: str,
     doc_type: str = DOC_TYPE_DECLARATION,
     group_id: int | None = None,
+    group_ids: list[int] | None = None,
     on_count: Callable[[int, int | None], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> list[str]:
@@ -460,7 +461,12 @@ def collect_record_ids(
     list_url = API_CERTIFICATES_URL if _is_certificate(doc_type) else API_DECLARATIONS_URL
     list_referer = f'{API_BASE}/rss/certificate' if _is_certificate(doc_type) else f'{API_BASE}/rds/declaration'
     label = 'сертификатов' if _is_certificate(doc_type) else 'деклараций'
-    id_group_eeu = [int(group_id)] if group_id is not None else []
+    if group_ids is not None:
+        id_group_eeu = [int(x) for x in group_ids]
+    elif group_id is not None:
+        id_group_eeu = [int(group_id)]
+    else:
+        id_group_eeu = []
 
     session = requests.Session()
     session.headers.update({
