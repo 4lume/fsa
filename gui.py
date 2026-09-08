@@ -54,6 +54,171 @@ def _asset_path(name: str) -> Path:
     return base / 'assets' / name
 
 
+class ScrollableOptionButton(ctk.CTkFrame):
+    """Dropdown with a scrollable popup — works with long lists in frozen exe."""
+
+    def __init__(
+        self,
+        master,
+        variable: ctk.StringVar,
+        values: list[str],
+        *,
+        height: int = CONTROL_H,
+        max_popup_height: int = 320,
+        font=None,
+        fg_color=COLOR_SURFACE_ELEVATED,
+        button_color=COLOR_ACCENT,
+        button_hover_color=COLOR_ACCENT_HOVER,
+        text_color=COLOR_TEXT,
+        dropdown_fg_color=COLOR_SURFACE,
+        dropdown_hover_color=COLOR_ACCENT_SOFT,
+        dropdown_text_color=COLOR_TEXT,
+        border_color=COLOR_BORDER,
+    ):
+        super().__init__(master, fg_color='transparent')
+        self._variable = variable
+        self._values = list(values)
+        self._max_popup_height = max_popup_height
+        self._popup: ctk.CTkToplevel | None = None
+        self._font = font
+        self._dropdown_fg_color = dropdown_fg_color
+        self._dropdown_hover_color = dropdown_hover_color
+        self._dropdown_text_color = dropdown_text_color
+        self._border_color = border_color
+
+        self._button = ctk.CTkButton(
+            self,
+            text=self._display_text(variable.get()),
+            height=height,
+            corner_radius=RADIUS,
+            fg_color=fg_color,
+            hover_color=COLOR_ACCENT_SOFT,
+            border_width=1,
+            border_color=border_color,
+            text_color=text_color,
+            font=font,
+            anchor='w',
+            command=self._toggle_popup,
+        )
+        self._button.pack(fill='x', expand=True)
+        # Separate chevron so it stays large, right-aligned, and accent-colored.
+        chevron_font = ctk.CTkFont(size=22, weight='bold')
+        self._chevron = ctk.CTkLabel(
+            self._button,
+            text='▾',
+            width=36,
+            height=height - 6,
+            fg_color='transparent',
+            text_color=button_color,
+            font=chevron_font,
+            anchor='center',
+            cursor='hand2',
+        )
+        self._chevron.place(relx=1.0, rely=0.5, x=-6, anchor='e')
+        self._chevron.bind('<Button-1>', lambda _e: self._toggle_popup())
+        self._var_trace = self._variable.trace_add('write', self._sync_button_text)
+
+    @staticmethod
+    def _display_text(value: str, limit: int = 48) -> str:
+        text = (value or '').strip()
+        if len(text) > limit:
+            text = text[: limit - 1] + '…'
+        return text
+
+    def _sync_button_text(self, *_args):
+        self._button.configure(text=self._display_text(self._variable.get()))
+
+    def configure(self, **kwargs):
+        if 'values' in kwargs:
+            self._values = list(kwargs.pop('values'))
+            if self._popup is not None and self._popup.winfo_exists():
+                self._close_popup()
+        if 'state' in kwargs:
+            self._button.configure(state=kwargs.pop('state'))
+        if kwargs:
+            super().configure(**kwargs)
+
+    def cget(self, attribute_name: str):
+        if attribute_name == 'values':
+            return list(self._values)
+        return super().cget(attribute_name)
+
+    def _toggle_popup(self):
+        if self._popup is not None and self._popup.winfo_exists():
+            self._close_popup()
+            return
+        self._open_popup()
+
+    def _close_popup(self):
+        popup = self._popup
+        self._popup = None
+        if popup is not None and popup.winfo_exists():
+            try:
+                popup.grab_release()
+            except Exception:
+                pass
+            popup.destroy()
+
+    def _pick(self, value: str):
+        self._variable.set(value)
+        self._close_popup()
+
+    def _open_popup(self):
+        self.update_idletasks()
+        popup = ctk.CTkToplevel(self)
+        popup.withdraw()
+        popup.title('Группа EEU')
+        popup.configure(fg_color=self._dropdown_fg_color)
+        popup.transient(self.winfo_toplevel())
+
+        width = max(self.winfo_width(), 360)
+        row_h = 34
+        content_h = min(max(len(self._values), 1) * row_h + 16, self._max_popup_height)
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height() + 2
+        screen_h = self.winfo_screenheight()
+        if y + content_h > screen_h - 40:
+            y = max(40, self.winfo_rooty() - content_h - 2)
+        popup.geometry(f'{width}x{content_h}+{x}+{y}')
+        popup.minsize(280, 120)
+        popup.resizable(True, True)
+
+        scroll = ctk.CTkScrollableFrame(
+            popup,
+            fg_color=self._dropdown_fg_color,
+            corner_radius=0,
+            border_width=1,
+            border_color=self._border_color,
+        )
+        scroll.pack(fill='both', expand=True, padx=1, pady=1)
+
+        for value in self._values:
+            item = ctk.CTkButton(
+                scroll,
+                text=value,
+                anchor='w',
+                height=30,
+                corner_radius=8,
+                fg_color='transparent',
+                hover_color=self._dropdown_hover_color,
+                text_color=self._dropdown_text_color,
+                font=self._font,
+                command=lambda v=value: self._pick(v),
+            )
+            item.pack(fill='x', padx=4, pady=1)
+
+        popup.protocol('WM_DELETE_WINDOW', self._close_popup)
+        popup.bind('<Escape>', lambda _e: self._close_popup())
+        popup.deiconify()
+        popup.lift()
+        popup.focus_force()
+        try:
+            popup.grab_set()
+        except Exception:
+            pass
+        self._popup = popup
+
+
 class APIHarvestTkShell:
     def __init__(self, shell: ctk.CTk):
         self.shell = shell
@@ -78,7 +243,7 @@ class APIHarvestTkShell:
         self._cancel_requested = threading.Event()
         self._param_entries: list[ctk.CTkEntry] = []
         self._option_radios: list[ctk.CTkRadioButton] = []
-        self._option_menus: list[ctk.CTkOptionMenu] = []
+        self._option_menus: list = []
         self.font_ui = ctk.CTkFont(size=FONT_SIZE, weight='bold')
         self.font_body = ctk.CTkFont(size=FONT_SIZE)
         self.font_header = ctk.CTkFont(size=22, weight='bold')
@@ -190,21 +355,21 @@ class APIHarvestTkShell:
         rb032.pack(side='left', padx=(GAP, 0), pady=(CONTROL_H - 24) // 2)
         self._option_radios.extend([rb010, rb032])
 
-        self.cmb_eeu = ctk.CTkOptionMenu(
+        self.cmb_eeu = ScrollableOptionButton(
             options,
             variable=self.eeu_group_var,
             values=[EEU_GROUP_ALL_LABEL],
             height=CONTROL_H,
-            corner_radius=RADIUS,
+            max_popup_height=320,
+            font=self.font_body,
             fg_color=COLOR_SURFACE_ELEVATED,
             button_color=COLOR_ACCENT,
             button_hover_color=COLOR_ACCENT_HOVER,
             text_color=COLOR_TEXT,
-            font=self.font_body,
             dropdown_fg_color=COLOR_SURFACE,
             dropdown_hover_color=COLOR_ACCENT_SOFT,
             dropdown_text_color=COLOR_TEXT,
-            anchor='w',
+            border_color=COLOR_BORDER,
         )
         self.cmb_eeu.grid(row=1, column=2, sticky='new', padx=(GAP // 2, 0))
         self._option_menus.append(self.cmb_eeu)
