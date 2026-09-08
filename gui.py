@@ -8,10 +8,24 @@ import customtkinter as ctk
 from PIL import Image
 
 try:
-    from new_parser.utils.fsa_constants import TECH_REG_TR_TS_010, TECH_REG_TR_TS_032
+    from new_parser.utils.fsa_constants import (
+        DOC_TYPE_CERTIFICATE,
+        DOC_TYPE_DECLARATION,
+        EEU_GROUP_ALL_LABEL,
+        TECH_REG_TR_TS_010,
+        TECH_REG_TR_TS_032,
+        get_eeu_groups,
+    )
     from new_parser.utils.worker import execute_all_passes
 except ModuleNotFoundError:
-    from utils.fsa_constants import TECH_REG_TR_TS_010, TECH_REG_TR_TS_032
+    from utils.fsa_constants import (
+        DOC_TYPE_CERTIFICATE,
+        DOC_TYPE_DECLARATION,
+        EEU_GROUP_ALL_LABEL,
+        TECH_REG_TR_TS_010,
+        TECH_REG_TR_TS_032,
+        get_eeu_groups,
+    )
     from utils.worker import execute_all_passes
 
 COLOR_BG = '#ffffff'
@@ -52,7 +66,10 @@ class APIHarvestTkShell:
         self.token_var = ctk.StringVar()
         self.start_date_var = ctk.StringVar(value='2024-01-01')
         self.end_date_var = ctk.StringVar(value='2024-02-01')
+        self.doc_type_var = ctk.StringVar(value=DOC_TYPE_DECLARATION)
         self.tech_reg_var = ctk.StringVar(value=TECH_REG_TR_TS_010)
+        self.eeu_group_var = ctk.StringVar(value=EEU_GROUP_ALL_LABEL)
+        self._eeu_label_to_id: dict[str, int | None] = {EEU_GROUP_ALL_LABEL: None}
         self.progress_q = queue.Queue()
         self.worker_thread = None
         self.slot_total = 0
@@ -60,7 +77,8 @@ class APIHarvestTkShell:
         self._run_locked = False
         self._cancel_requested = threading.Event()
         self._param_entries: list[ctk.CTkEntry] = []
-        self._tech_reg_radios: list[ctk.CTkRadioButton] = []
+        self._option_radios: list[ctk.CTkRadioButton] = []
+        self._option_menus: list[ctk.CTkOptionMenu] = []
         self.font_ui = ctk.CTkFont(size=FONT_SIZE, weight='bold')
         self.font_body = ctk.CTkFont(size=FONT_SIZE)
         self.font_header = ctk.CTkFont(size=22, weight='bold')
@@ -109,35 +127,28 @@ class APIHarvestTkShell:
         self.entry_token = self._entry(inner_token, self.token_var, 'Вставь токен')
 
         inner_p = self._card(root)
-        dates = ctk.CTkFrame(inner_p, fg_color='transparent')
-        dates.pack(fill='x')
-        dates.grid_columnconfigure(0, weight=1, uniform='params')
-        dates.grid_columnconfigure(1, weight=1, uniform='params')
-        start_col = ctk.CTkFrame(dates, fg_color='transparent')
+
+        top = ctk.CTkFrame(inner_p, fg_color='transparent')
+        top.pack(fill='x')
+        top.grid_columnconfigure(0, weight=1, uniform='top')
+        top.grid_columnconfigure(1, weight=1, uniform='top')
+        top.grid_columnconfigure(2, weight=1, uniform='top')
+
+        start_col = ctk.CTkFrame(top, fg_color='transparent')
         start_col.grid(row=0, column=0, sticky='nsew', padx=(0, GAP // 2))
-        end_col = ctk.CTkFrame(dates, fg_color='transparent')
-        end_col.grid(row=0, column=1, sticky='nsew', padx=(GAP // 2, 0))
+        end_col = ctk.CTkFrame(top, fg_color='transparent')
+        end_col.grid(row=0, column=1, sticky='nsew', padx=(GAP // 2, GAP // 2))
+        file_col = ctk.CTkFrame(top, fg_color='transparent')
+        file_col.grid(row=0, column=2, sticky='nsew', padx=(GAP // 2, 0))
+
         self._add_date_field(start_col, 'Дата начала, YYYY-MM-DD', self.start_date_var)
         self._add_date_field(end_col, 'Дата конца, YYYY-MM-DD', self.end_date_var)
 
-        tech_block = ctk.CTkFrame(start_col, fg_color='transparent')
-        tech_block.pack(fill='x', pady=(GAP, 0))
-        self._label(tech_block, 'Технический регламент')
-        radios = ctk.CTkFrame(tech_block, fg_color='transparent')
-        radios.pack(fill='x')
-        rb010 = self._radio(radios, 'ТР ТС 010', TECH_REG_TR_TS_010)
-        rb010.pack(side='left')
-        rb032 = self._radio(radios, 'ТР ТС 032', TECH_REG_TR_TS_032)
-        rb032.pack(side='left', padx=(GAP, 0))
-        self._tech_reg_radios.extend([rb010, rb032])
-
-        file_block = ctk.CTkFrame(end_col, fg_color='transparent')
-        file_block.pack(fill='x', pady=(GAP, 0))
-        self._label(file_block, 'Файл Excel')
-        file_row = ctk.CTkFrame(file_block, fg_color='transparent')
+        self._label(file_col, 'Файл Excel')
+        file_row = ctk.CTkFrame(file_col, fg_color='transparent')
         file_row.pack(fill='x')
-        self.btn_workbook = self._button(file_row, 'Выбрать файл', command=self.on_take_file, secondary=True, width=150)
-        self.btn_workbook.pack(side='left', padx=(0, GAP))
+        self.btn_workbook = self._button(file_row, 'Выбрать файл', command=self.on_take_file, secondary=True, width=140)
+        self.btn_workbook.pack(side='left', padx=(0, GAP // 2))
         self.lbl_file = ctk.CTkLabel(
             file_row,
             text='Файл не выбран',
@@ -149,6 +160,56 @@ class APIHarvestTkShell:
             width=1,
         )
         self.lbl_file.pack(side='left', fill='x', expand=True)
+
+        options = ctk.CTkFrame(inner_p, fg_color='transparent')
+        options.pack(fill='x', pady=(GAP, 0))
+        options.grid_columnconfigure(0, weight=1, uniform='options')
+        options.grid_columnconfigure(1, weight=1, uniform='options')
+        options.grid_columnconfigure(2, weight=1, uniform='options')
+        options.grid_rowconfigure(1, weight=0)
+
+        self._label(options, 'Тип документа', pack=False).grid(row=0, column=0, sticky='nw', padx=(0, GAP // 2), pady=(0, GAP))
+        self._label(options, 'Технический регламент', pack=False).grid(row=0, column=1, sticky='nw', padx=(GAP // 2, GAP // 2), pady=(0, GAP))
+        self._label(options, 'Группа EEU', pack=False).grid(row=0, column=2, sticky='nw', padx=(GAP // 2, 0), pady=(0, GAP))
+
+        doc_radios = ctk.CTkFrame(options, fg_color='transparent', height=CONTROL_H)
+        doc_radios.grid(row=1, column=0, sticky='new', padx=(0, GAP // 2))
+        doc_radios.pack_propagate(False)
+        rb_decl = self._radio(doc_radios, 'Декларации', DOC_TYPE_DECLARATION, variable=self.doc_type_var)
+        rb_decl.pack(side='left', pady=(CONTROL_H - 24) // 2)
+        rb_cert = self._radio(doc_radios, 'Сертификаты', DOC_TYPE_CERTIFICATE, variable=self.doc_type_var)
+        rb_cert.pack(side='left', padx=(GAP, 0), pady=(CONTROL_H - 24) // 2)
+        self._option_radios.extend([rb_decl, rb_cert])
+
+        radios = ctk.CTkFrame(options, fg_color='transparent', height=CONTROL_H)
+        radios.grid(row=1, column=1, sticky='new', padx=(GAP // 2, GAP // 2))
+        radios.pack_propagate(False)
+        rb010 = self._radio(radios, 'ТР ТС 010', TECH_REG_TR_TS_010, variable=self.tech_reg_var)
+        rb010.pack(side='left', pady=(CONTROL_H - 24) // 2)
+        rb032 = self._radio(radios, 'ТР ТС 032', TECH_REG_TR_TS_032, variable=self.tech_reg_var)
+        rb032.pack(side='left', padx=(GAP, 0), pady=(CONTROL_H - 24) // 2)
+        self._option_radios.extend([rb010, rb032])
+
+        self.cmb_eeu = ctk.CTkOptionMenu(
+            options,
+            variable=self.eeu_group_var,
+            values=[EEU_GROUP_ALL_LABEL],
+            height=CONTROL_H,
+            corner_radius=RADIUS,
+            fg_color=COLOR_SURFACE_ELEVATED,
+            button_color=COLOR_ACCENT,
+            button_hover_color=COLOR_ACCENT_HOVER,
+            text_color=COLOR_TEXT,
+            font=self.font_body,
+            dropdown_fg_color=COLOR_SURFACE,
+            dropdown_hover_color=COLOR_ACCENT_SOFT,
+            dropdown_text_color=COLOR_TEXT,
+            anchor='w',
+        )
+        self.cmb_eeu.grid(row=1, column=2, sticky='new', padx=(GAP // 2, 0))
+        self._option_menus.append(self.cmb_eeu)
+        self.tech_reg_var.trace_add('write', lambda *_: self._refresh_eeu_groups())
+        self._refresh_eeu_groups()
 
         inner_pr = self._card(root)
         self.progress_harvest, self.lbl_harvest = self._add_progress_row(inner_pr, 'Сбор ID')
@@ -168,12 +229,22 @@ class APIHarvestTkShell:
         inner.pack(fill='x', padx=PAD, pady=PAD)
         return inner
 
-    def _label(self, parent, text: str, *, color: str = COLOR_TEXT_MUTED, side: str | None = None, expand: bool = False):
+    def _label(
+        self,
+        parent,
+        text: str,
+        *,
+        color: str = COLOR_TEXT_MUTED,
+        side: str | None = None,
+        expand: bool = False,
+        pack: bool = True,
+    ):
         widget = ctk.CTkLabel(parent, text=text, font=self.font_ui, text_color=color, anchor='w', height=20)
-        if side:
-            widget.pack(side=side, fill='x' if expand else None, expand=expand)
-        else:
-            widget.pack(anchor='w', pady=(0, GAP))
+        if pack:
+            if side:
+                widget.pack(side=side, fill='x' if expand else None, expand=expand)
+            else:
+                widget.pack(anchor='w', pady=(0, GAP))
         return widget
 
     def _entry(self, parent, variable: ctk.StringVar, placeholder: str = '') -> ctk.CTkEntry:
@@ -221,11 +292,11 @@ class APIHarvestTkShell:
             command=command,
         )
 
-    def _radio(self, parent, text: str, value: str) -> ctk.CTkRadioButton:
+    def _radio(self, parent, text: str, value: str, *, variable: ctk.StringVar) -> ctk.CTkRadioButton:
         return ctk.CTkRadioButton(
             parent,
             text=text,
-            variable=self.tech_reg_var,
+            variable=variable,
             value=value,
             font=self.font_body,
             text_color=COLOR_TEXT,
@@ -251,6 +322,26 @@ class APIHarvestTkShell:
         self._label(parent, title)
         entry = self._entry(parent, variable)
         self._param_entries.append(entry)
+
+    def _refresh_eeu_groups(self):
+        tech_key = self.tech_reg_var.get()
+        groups = get_eeu_groups(tech_key)
+        labels = [EEU_GROUP_ALL_LABEL]
+        mapping: dict[str, int | None] = {EEU_GROUP_ALL_LABEL: None}
+        for group in groups:
+            label = str(group.get('name') or group.get('id'))
+            # Keep labels unique for OptionMenu values.
+            if label in mapping:
+                label = f"{label} [{group.get('id')}]"
+            mapping[label] = int(group['id'])
+            labels.append(label)
+        self._eeu_label_to_id = mapping
+        current = self.eeu_group_var.get()
+        self.cmb_eeu.configure(values=labels)
+        if current not in mapping:
+            self.eeu_group_var.set(EEU_GROUP_ALL_LABEL)
+        else:
+            self.eeu_group_var.set(current)
 
     def on_take_file(self):
         chosen = filedialog.askopenfilename(parent=self.shell, title='Книга Excel', filetypes=[('Excel', '*.xlsx'), ('Все файлы', '*.*')])
@@ -296,7 +387,16 @@ class APIHarvestTkShell:
         self.progress_q.queue.clear()
         self.worker_thread = threading.Thread(
             target=execute_all_passes,
-            args=(self, self.path_xlsx, token, start_date, end_date, self.tech_reg_var.get()),
+            args=(
+                self,
+                self.path_xlsx,
+                token,
+                start_date,
+                end_date,
+                self.tech_reg_var.get(),
+                self.doc_type_var.get(),
+                self._eeu_label_to_id.get(self.eeu_group_var.get()),
+            ),
             daemon=True,
         )
         self.worker_thread.start()
@@ -306,8 +406,10 @@ class APIHarvestTkShell:
         self.entry_token.configure(state='disabled')
         for entry in self._param_entries:
             entry.configure(state='disabled')
-        for radio in self._tech_reg_radios:
+        for radio in self._option_radios:
             radio.configure(state='disabled')
+        for menu in self._option_menus:
+            menu.configure(state='disabled')
 
     def on_cancel_job(self):
         if not self._run_locked:
@@ -326,8 +428,10 @@ class APIHarvestTkShell:
         self.entry_token.configure(state='normal')
         for entry in self._param_entries:
             entry.configure(state='normal')
-        for radio in self._tech_reg_radios:
+        for radio in self._option_radios:
             radio.configure(state='normal')
+        for menu in self._option_menus:
+            menu.configure(state='normal')
 
     def _tick_meter(self):
         while not self.progress_q.empty():

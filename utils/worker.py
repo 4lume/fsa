@@ -4,11 +4,19 @@ import time
 from openpyxl import load_workbook
 
 try:
-    from new_parser.utils.fsa_api import collect_declaration_ids, extract_record_fields, fetch_declaration_record, fetch_nsi_labels
-    from new_parser.utils.fsa_constants import DELAY_BETWEEN_REQUESTS_SEC_MAX, DELAY_BETWEEN_REQUESTS_SEC_MIN
+    from new_parser.utils.fsa_api import collect_record_ids, extract_record_fields, fetch_nsi_labels, fetch_record
+    from new_parser.utils.fsa_constants import (
+        DELAY_BETWEEN_REQUESTS_SEC_MAX,
+        DELAY_BETWEEN_REQUESTS_SEC_MIN,
+        DOC_TYPE_DECLARATION,
+    )
 except ModuleNotFoundError:
-    from utils.fsa_api import collect_declaration_ids, extract_record_fields, fetch_declaration_record, fetch_nsi_labels
-    from utils.fsa_constants import DELAY_BETWEEN_REQUESTS_SEC_MAX, DELAY_BETWEEN_REQUESTS_SEC_MIN
+    from utils.fsa_api import collect_record_ids, extract_record_fields, fetch_nsi_labels, fetch_record
+    from utils.fsa_constants import (
+        DELAY_BETWEEN_REQUESTS_SEC_MAX,
+        DELAY_BETWEEN_REQUESTS_SEC_MIN,
+        DOC_TYPE_DECLARATION,
+    )
 
 
 def _pause():
@@ -19,13 +27,24 @@ def _cancelled(host) -> bool:
     return bool(getattr(host, 'is_cancelled', lambda: False)())
 
 
-def execute_all_passes(host, path_xlsx, token, start_date, end_date, tech_key):
+def execute_all_passes(
+    host,
+    path_xlsx,
+    token,
+    start_date,
+    end_date,
+    tech_key,
+    doc_type=DOC_TYPE_DECLARATION,
+    group_id=None,
+):
     try:
-        ids = collect_declaration_ids(
+        ids = collect_record_ids(
             token,
             start_date,
             end_date,
             tech_key,
+            doc_type,
+            group_id=group_id,
             on_count=lambda count, total: host.progress_q.put(('harvest', count, total)),
             should_stop=lambda: _cancelled(host),
         )
@@ -66,12 +85,13 @@ def execute_all_passes(host, path_xlsx, token, start_date, end_date, tech_key):
                 if anchor_row is None:
                     anchor_row = grid.max_row + 1
 
-                record = fetch_declaration_record(token, pub_id)
+                record = fetch_record(token, pub_id, doc_type)
                 fields = extract_record_fields(record)
                 labels = fetch_nsi_labels(
                     token,
                     scheme_ref=fields.get('scheme_ref'),
-                    declaration_id=pub_id,
+                    record_id=pub_id,
+                    doc_type=doc_type,
                 )
 
                 title = fields.get('declaration_period') or fields.get('number') or pub_id
