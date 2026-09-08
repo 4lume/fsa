@@ -111,12 +111,12 @@ class APIHarvestTkShell:
         inner_p = self._card(root)
         dates = ctk.CTkFrame(inner_p, fg_color='transparent')
         dates.pack(fill='x')
-        dates.grid_columnconfigure(0, weight=1)
-        dates.grid_columnconfigure(1, weight=1)
+        dates.grid_columnconfigure(0, weight=1, uniform='params')
+        dates.grid_columnconfigure(1, weight=1, uniform='params')
         start_col = ctk.CTkFrame(dates, fg_color='transparent')
-        start_col.grid(row=0, column=0, sticky='new', padx=(0, GAP // 2))
+        start_col.grid(row=0, column=0, sticky='nsew', padx=(0, GAP // 2))
         end_col = ctk.CTkFrame(dates, fg_color='transparent')
-        end_col.grid(row=0, column=1, sticky='new', padx=(GAP // 2, 0))
+        end_col.grid(row=0, column=1, sticky='nsew', padx=(GAP // 2, 0))
         self._add_date_field(start_col, 'Дата начала, YYYY-MM-DD', self.start_date_var)
         self._add_date_field(end_col, 'Дата конца, YYYY-MM-DD', self.end_date_var)
 
@@ -146,7 +146,7 @@ class APIHarvestTkShell:
             anchor='w',
             justify='left',
             height=CONTROL_H,
-            wraplength=280,
+            width=1,
         )
         self.lbl_file.pack(side='left', fill='x', expand=True)
 
