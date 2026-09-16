@@ -778,6 +778,8 @@ class APIHarvestTkShell:
             if isinstance(item, tuple) and len(item) >= 2 and item[0] == 'error':
                 self._release_run_ui()
                 messagebox.showerror('Ошибка', item[1], parent=self.shell)
+            elif isinstance(item, tuple) and len(item) >= 2 and item[0] == 'warn':
+                messagebox.showwarning('Предупреждение', item[1], parent=self.shell)
             elif isinstance(item, tuple) and item and item[0] == 'cancelled':
                 self._release_run_ui()
             elif isinstance(item, tuple) and item and item[0] == 'harvest':

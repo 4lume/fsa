@@ -1,4 +1,5 @@
 import random
+import re
 import time
 
 from openpyxl import load_workbook
@@ -17,6 +18,17 @@ except ModuleNotFoundError:
         DELAY_BETWEEN_REQUESTS_SEC_MIN,
         DOC_TYPE_DECLARATION,
     )
+
+# Символы, которые openpyxl/Excel не допускают в ячейках.
+_ILLEGAL_XLSX = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def _clean_cell(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _ILLEGAL_XLSX.sub('', value)
+    return value
 
 
 def _pause():
@@ -65,6 +77,7 @@ def execute_all_passes(
         host.slot_total = len(ids)
         host.slot_done = 0
         host.progress_q.put(('parse', 0, host.slot_total))
+        row_errors: list[str] = []
 
         for pub_id in ids:
             if _cancelled(host):
@@ -95,29 +108,36 @@ def execute_all_passes(
                 )
 
                 title = fields.get('declaration_period') or fields.get('number') or pub_id
-                grid[f'C{anchor_row}'] = title
-                grid[f'D{anchor_row}'] = labels.get('scheme')
-                grid[f'E{anchor_row}'] = fields.get('status')
-                grid[f'F{anchor_row}'] = fields.get('applicant')
-                grid[f'G{anchor_row}'] = fields.get('inn')
-                grid[f'H{anchor_row}'] = fields.get('manufacturer')
-                grid[f'I{anchor_row}'] = fields.get('address')
-                grid[f'J{anchor_row}'] = fields.get('product_name')
-                grid[f'K{anchor_row}'] = fields.get('document')
-                grid[f'L{anchor_row}'] = fields.get('standards')
-                grid[f'M{anchor_row}'] = fields.get('testing_labs')
-                grid[f'N{anchor_row}'] = fields.get('testing_protocols')
+                grid[f'C{anchor_row}'] = _clean_cell(title)
+                grid[f'D{anchor_row}'] = _clean_cell(labels.get('scheme'))
+                grid[f'E{anchor_row}'] = _clean_cell(fields.get('status'))
+                grid[f'F{anchor_row}'] = _clean_cell(fields.get('applicant'))
+                grid[f'G{anchor_row}'] = _clean_cell(fields.get('inn'))
+                grid[f'H{anchor_row}'] = _clean_cell(fields.get('manufacturer'))
+                grid[f'I{anchor_row}'] = _clean_cell(fields.get('address'))
+                grid[f'J{anchor_row}'] = _clean_cell(fields.get('product_name'))
+                grid[f'K{anchor_row}'] = _clean_cell(fields.get('document'))
+                grid[f'L{anchor_row}'] = _clean_cell(fields.get('standards'))
+                grid[f'M{anchor_row}'] = _clean_cell(fields.get('testing_labs'))
+                grid[f'N{anchor_row}'] = _clean_cell(fields.get('testing_protocols'))
                 grid[f'O{anchor_row}'] = pub_id
-                grid[f'P{anchor_row}'] = fields.get('object_type')
+                grid[f'P{anchor_row}'] = _clean_cell(fields.get('object_type'))
 
                 host.slot_done += 1
                 host.progress_q.put(('parse', host.slot_done, host.slot_total))
                 book.save(path_xlsx)
                 _pause()
             except Exception as exc:
-                raise RuntimeError(f'Ошибка по ID {pub_id}: {exc}') from exc
+                row_errors.append(f'ID {pub_id}: {exc}')
+                host.slot_done += 1
+                host.progress_q.put(('parse', host.slot_done, host.slot_total))
+                continue
 
         book.save(path_xlsx)
+        if row_errors:
+            host.progress_q.put(
+                ('warn', f'Готово с ошибками ({len(row_errors)}):\n' + '\n'.join(row_errors))
+            )
     except Exception as exc:
         if _cancelled(host):
             host.progress_q.put(('cancelled',))
