@@ -337,7 +337,7 @@ def build_list_payload(
 ):
     if _is_certificate(doc_type):
         return {
-            'size': 100,
+            'size': LIST_PAGE_SIZE,
             'page': page,
             'count': 0,
             'filter': {
@@ -370,7 +370,7 @@ def build_list_payload(
         }
 
     return {
-        'size': 100,
+        'size': LIST_PAGE_SIZE,
         'page': page,
         'count': 0,
         'filter': {
@@ -421,16 +421,6 @@ def _list_items(data: Any) -> list:
     return []
 
 
-def _list_total(data: Any) -> int | None:
-    if not isinstance(data, dict):
-        return None
-    for key in ('count', 'total', 'totalElements', 'totalCount'):
-        value = data.get(key)
-        if isinstance(value, int) and value > 0:
-            return value
-    return None
-
-
 def collect_record_ids(
     token: str,
     start_date: str,
@@ -463,8 +453,7 @@ def collect_record_ids(
 
     all_ids: list[str] = []
     page = 0
-    total: int | None = None
-    while True:
+    while page < LIST_MAX_PAGES:
         if should_stop and should_stop():
             break
         payload = build_list_payload(
@@ -501,14 +490,13 @@ def collect_record_ids(
         items = _list_items(data)
         if not items:
             break
-        if total is None:
-            total = _list_total(data)
 
         for item in items:
             if isinstance(item, dict) and item.get('id') is not None:
                 all_ids.append(str(item['id']))
         if on_count:
-            on_count(len(all_ids), total)
+            # Знаменатель — лимит API (20×100), а не неточный count из ответа.
+            on_count(len(all_ids), LIST_MAX_IDS)
 
         page += 1
         time.sleep(random.uniform(DELAY_BETWEEN_REQUESTS_SEC_MIN, DELAY_BETWEEN_REQUESTS_SEC_MAX))
