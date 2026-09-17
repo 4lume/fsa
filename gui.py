@@ -7,26 +7,15 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image
 
-try:
-    from new_parser.utils.fsa_constants import (
-        DOC_TYPE_CERTIFICATE,
-        DOC_TYPE_DECLARATION,
-        EEU_GROUP_ALL_LABEL,
-        TECH_REG_TR_TS_010,
-        TECH_REG_TR_TS_032,
-        get_eeu_groups,
-    )
-    from new_parser.utils.worker import execute_all_passes
-except ModuleNotFoundError:
-    from utils.fsa_constants import (
-        DOC_TYPE_CERTIFICATE,
-        DOC_TYPE_DECLARATION,
-        EEU_GROUP_ALL_LABEL,
-        TECH_REG_TR_TS_010,
-        TECH_REG_TR_TS_032,
-        get_eeu_groups,
-    )
-    from utils.worker import execute_all_passes
+from utils.fsa_constants import (
+    DOC_TYPE_CERTIFICATE,
+    DOC_TYPE_DECLARATION,
+    EEU_GROUP_ALL_LABEL,
+    TECH_REG_TR_TS_010,
+    TECH_REG_TR_TS_032,
+    get_eeu_groups,
+)
+from utils.worker import execute_all_passes
 
 COLOR_BG = '#ffffff'
 COLOR_SURFACE = '#ffffff'

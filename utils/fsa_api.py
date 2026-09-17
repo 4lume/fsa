@@ -5,34 +5,19 @@ from typing import Any, Callable
 
 import requests
 
-try:
-    from new_parser.utils.fsa_constants import (
-        API_BASE,
-        API_CERTIFICATES_URL,
-        API_DECLARATIONS_URL,
-        API_NSI_MULTI_URL,
-        DEFAULT_HEADERS,
-        DELAY_BETWEEN_REQUESTS_SEC_MAX,
-        DELAY_BETWEEN_REQUESTS_SEC_MIN,
-        DOC_TYPE_CERTIFICATE,
-        DOC_TYPE_DECLARATION,
-        TECH_REG_PRESETS,
-        TECH_REG_TR_TS_010,
-    )
-except ModuleNotFoundError:
-    from utils.fsa_constants import (
-        API_BASE,
-        API_CERTIFICATES_URL,
-        API_DECLARATIONS_URL,
-        API_NSI_MULTI_URL,
-        DEFAULT_HEADERS,
-        DELAY_BETWEEN_REQUESTS_SEC_MAX,
-        DELAY_BETWEEN_REQUESTS_SEC_MIN,
-        DOC_TYPE_CERTIFICATE,
-        DOC_TYPE_DECLARATION,
-        TECH_REG_PRESETS,
-        TECH_REG_TR_TS_010,
-    )
+from utils.fsa_constants import (
+    API_BASE,
+    API_CERTIFICATES_URL,
+    API_DECLARATIONS_URL,
+    API_NSI_MULTI_URL,
+    DEFAULT_HEADERS,
+    DELAY_BETWEEN_REQUESTS_SEC_MAX,
+    DELAY_BETWEEN_REQUESTS_SEC_MIN,
+    DOC_TYPE_CERTIFICATE,
+    DOC_TYPE_DECLARATION,
+    TECH_REG_PRESETS,
+    TECH_REG_TR_TS_010,
+)
 
 
 STATUS_MAP = {

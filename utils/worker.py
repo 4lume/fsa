@@ -4,20 +4,12 @@ import time
 
 from openpyxl import load_workbook
 
-try:
-    from new_parser.utils.fsa_api import collect_record_ids, extract_record_fields, fetch_nsi_labels, fetch_record
-    from new_parser.utils.fsa_constants import (
-        DELAY_BETWEEN_REQUESTS_SEC_MAX,
-        DELAY_BETWEEN_REQUESTS_SEC_MIN,
-        DOC_TYPE_DECLARATION,
-    )
-except ModuleNotFoundError:
-    from utils.fsa_api import collect_record_ids, extract_record_fields, fetch_nsi_labels, fetch_record
-    from utils.fsa_constants import (
-        DELAY_BETWEEN_REQUESTS_SEC_MAX,
-        DELAY_BETWEEN_REQUESTS_SEC_MIN,
-        DOC_TYPE_DECLARATION,
-    )
+from utils.fsa_api import collect_record_ids, extract_record_fields, fetch_nsi_labels, fetch_record
+from utils.fsa_constants import (
+    DELAY_BETWEEN_REQUESTS_SEC_MAX,
+    DELAY_BETWEEN_REQUESTS_SEC_MIN,
+    DOC_TYPE_DECLARATION,
+)
 
 # Символы, которые openpyxl/Excel не допускают в ячейках.
 _ILLEGAL_XLSX = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')

@@ -34,8 +34,5 @@ DEFAULT_HEADERS = {
 
 
 def get_eeu_groups(tech_key: str) -> list[dict]:
-    try:
-        from new_parser.utils.eeu_groups_data import EEU_GROUPS_BY_TECH
-    except ModuleNotFoundError:
-        from utils.eeu_groups_data import EEU_GROUPS_BY_TECH
+    from utils.eeu_groups_data import EEU_GROUPS_BY_TECH
     return list(EEU_GROUPS_BY_TECH.get(tech_key) or [])
